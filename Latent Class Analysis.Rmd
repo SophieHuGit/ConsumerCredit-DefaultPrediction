@@ -1,0 +1,136 @@
+---
+title: "Data Mining: Latent Class Analysis of GermanCredit Data"
+author: "Shuang (Sophie) Hu"
+date: "1/23/2020"
+output: html_document
+---
+
+## 1.Perform latent class analysis of only the categorical variables for market segmentation using (function `poLCA` in package `poLCA`)
+**(Note: the local optima problem is big for all the clustering and latent class methods)** 
+
+I choose the following 5 categorial variables: existing checking account status, purpose of credit, savings account/bonds, personal status and sex, job. 
+```{r}
+library(caret)
+data("GermanCredit")
+
+#Merge dummy variable columns into 1 with new column names
+GermanCredit$CheckingAccountStatus<- names(GermanCredit[11:14])[max.col(GermanCredit[11:14])]
+GermanCredit$CreditPurpose<- names(GermanCredit[20:30])[max.col(GermanCredit[20:30])]
+GermanCredit$SavingAccountBonds<- names(GermanCredit[31:35])[max.col(GermanCredit[31:35])]
+GermanCredit$PersonalStatusSex<- names(GermanCredit[41:45])[max.col(GermanCredit[41:45])]
+GermanCredit$Job<- names(GermanCredit[59:62])[max.col(GermanCredit[59:62])]
+head(GermanCredit[,63:67])
+```
+```{r}
+#Assign values to the categorial values
+GermanCredit$CheckingAccountStatus<- as.numeric(c("CheckingAccountStatus.lt.0"="1","CheckingAccountStatus.0.to.200"="2","CheckingAccountStatus.gt.200"="3","CheckingAccountStatus.none"="4")[GermanCredit$CheckingAccountStatus])
+
+GermanCredit$CreditPurpose<- as.numeric(c("Purpose.NewCar"="1","Purpose.UsedCar"="2","Purpose.Furniture.Equipment"="3","Purpose.Radio.Television"="4","Purpose.DomesticAppliance"="5","Purpose.Repairs"="6","Purpose.Education"="7","Purpose.Vacation"="8","Purpose.Retraining"="9","Purpose.Business"="10","Purpose.Other"="11")[GermanCredit$CreditPurpose])
+
+GermanCredit$SavingAccountBonds<- as.numeric(c("SavingsAccountBonds.lt.100"="1","SavingsAccountBonds.100.to.500"="2","SavingsAccountBonds.500.to.1000"="3","SavingsAccountBonds.gt.1000"="4","SavingsAccountBonds.Unknown"="5")[GermanCredit$SavingAccountBonds])
+                                             
+GermanCredit$PersonalStatusSex<- as.numeric(c("Personal.Male.Divorced.Seperated"="1","Personal.Female.NotSingle"="2","Personal.Male.Single"="3","Personal.Male.Married.Widowed"="4","Personal.Female.Single"="5")[GermanCredit$PersonalStatusSex])
+
+GermanCredit$Job<- as.numeric(c("Job.UnemployedUnskilled"="1","Job.UnskilledResident"="2","Job.SkilledEmployee"="3","Job.Management.SelfEmp.HighlyQualified"="4")[GermanCredit$Job])
+
+GermanCredit.categorical<- GermanCredit[,63:67]
+head(GermanCredit.categorical)
+```
+
+Then, I split the data into training set (70%) and test set (30%).
+```{r}
+require(caTools)
+set.seed(134)
+sample=sample.split(GermanCredit.categorical, SplitRatio=0.7)
+train=subset(GermanCredit.categorical,sample ==TRUE) 
+test=subset(GermanCredit.categorical,sample ==FALSE)
+head(train)
+```
+Below is the Scree Plot of Matches-Accounted-For (MAF). 
+```{r}
+source("Kmodes function.R") #call the Kmodes function
+
+MAF<- data.frame()
+for (i in 1:7){
+  x=kmodes(data=train, nclust=i, nloops=30, seed=123121)
+  MAF<- rbind(MAF, cbind(i, x$MAF))
+}
+colnames(MAF)<- c("Cluster","MAF")
+MAF
+```
+```{r}
+#Plot the Scree Plot of MAF
+plot(1:7, MAF$MAF, main="Matches Accounted For Scree Plot", xlab = "Number of Clusters", ylab="MAF",col=4, type="l")
+```
+
+Then, I run LCA from k=2 to k=7 to find the best result based on AIC criteria.
+```{r}
+require(poLCA)
+f<- with(train, cbind(CheckingAccountStatus,CreditPurpose,SavingAccountBonds,PersonalStatusSex,Job)~1)
+
+AIC<- data.frame()
+BIC<- data.frame()
+for (k in 2:7){
+  result.k=poLCA(f, train, nclass=k, nrep=10, tol=.001, verbose=FALSE)
+  AIC<- rbind(AIC, cbind(k, result.k$aic))
+  BIC<- rbind(BIC, result.k$bic)
+}
+criteria<- cbind(AIC,BIC)
+colnames(criteria)<- c("Class","AIC","BIC")
+criteria
+```
+
+We can also observe the best AIC of K=3 from the following plot.
+```{r}
+ggplot(criteria, aes(Class))+
+  geom_line(aes(y= AIC, colour = "AIC"))+
+  labs(y= "Criteria Score")
+```
+
+## 2.Determine 2,3,...,K class/cluster solutions 
+**Note: Run from multiple random starts. Use AIC criterion and interpretation based on graphs to interpret LCA solutions.**
+
+I choose K=3 class as the optimal solution since it has the lowest AIC score.
+```{r}
+f3=cbind(CheckingAccountStatus,CreditPurpose,SavingAccountBonds,PersonalStatusSex,Job)~1
+result.3=poLCA(f3, train, nclass=3, nrep=10, tol=.001, verbose=FALSE, graphs=TRUE)
+```
+```{r}
+table(result.3$predclass) # Class size
+result.3$probs # Probabilities
+```
+
+## 3.Holdout Validation of LCA
+**For Holdout, use the centers class-conditional probabilities (i.e. probs generated from the training set LCA solution, as the starting point for holdout). Use similarity of relative class sizes and hold-out class conditional probs as measures of stability.**
+```{r}
+LCA.train.condprobs<- result.3$probs
+
+f3.test=cbind(CheckingAccountStatus,CreditPurpose,SavingAccountBonds,PersonalStatusSex,Job)~1
+result.3.test=poLCA(f3, test, nclass=3, nrep=10, tol=.001, probs.start = LCA.train.condprobs, verbose=FALSE, graphs=TRUE)
+```
+```{r}
+result.3.test$probs
+```
+
+## 4.Implications on the goodness, interpretability, stability, adequacy of solutions
+We can intepret the classes as follows.
+
+**Class 1**: Class 1 takes up 22.4% of the population, people in this group mainly have no checking account (~41%) or have less than 200 DM’s (~37%), the purpose of credit is for new cars (~25%) and radio/television (~39%). Most of them have a savings/bond account less than 100 DM (~61%), tend to be married females (~52%) and married (widowed) males (~48%) who are skilled employees (~68%). 
+
+**Class 2**: Class 2 takes up 32.7% of the population, people in this group mainly have no checking account (~70%), the purpose of credit is for radio/television (~28%) and business (~17%). 50% of them have a savings/bond account from 100~500 DM, they tend to be single males (~81%) who are highly-skilled employees (~64%). 
+
+**Class 3**: Class 3 takes up 44.9% of the population, people in this group mainly have negative checking account (~52%), the purpose of credit is for new car and furniture/equipment, and the probability of credit purpose on education is larger than the other 2 classes. Most of them have a savings/bond account less than 100 DM (~81%). They tend to be single males (~64%) who are skilled employees (~59%).   
+
+The implication is that, class 1 could be young families or middle class families who are not rich, even have some debt on new cars.
+Class 2 could be young single professionals with high skills. They have certain amount of savings and part of the credit purpose is for business. Class 3 could be recent graduate students who just start career, they may have more debt. 
+
+According to the result of the test set, we can see that the size of each class is quite similar, and become more evenly distributed. The margined probabilities of the test set are similar to those in the training set. Therefore, the goodness, interpretability and stability is good for the 3-class solution.
+
+## 5.Comment on the similarity/differences between the clustering solutions you generated in Assignment 1 with the solution in using LCA.
+**Similarity**: We can find there's a similarity between the feature of age in the Kmeans/Komeans clustering and the implications of personal status and job skills in LCA. 
+
+**Difference**: Clustering solutions can only be applied to numeric variables, therefore the intepretation is more difficult due to lack of qualitative details, and it requires more guess to summarize the cluster features. As for LCA, since the technique separates the customers into different subgroups, there is more room to intepret the latent variates (e.g. age, marrige and gender, employment, etc.) that affect the observed factors.
+
+
+
+

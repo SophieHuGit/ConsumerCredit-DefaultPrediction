@@ -1,0 +1,199 @@
+---
+title: "PCA"
+author: "Shuang (Sophie) Hu"
+date: "2/7/2020"
+---
+
+## 1.Split sample into two random samples of sizes 70% and 30%.
+```{r}
+library(caret)
+data("GermanCredit")
+GermanCredit.data<- GermanCredit[,1:7]
+head(GermanCredit.data)
+```
+```{r}
+n = nrow(GermanCredit.data)
+traindata=sample(1:n, as.integer(n*0.7),replace=FALSE)
+G=scale(GermanCredit.data)
+Gtrain= G[traindata,]
+Gtest= G[-traindata,]
+```
+
+## 2.Perform principle components of variables 1:7 from the GermanCredit Data on training sample.
+In the plot of the principle components, we can see that the height of each bar displays the variance of the corresponding element of principle components (i.e. squares of `pca.train$sdev`).
+```{r}
+pca.train =prcomp (Gtrain, scale=TRUE)
+plot(pca.train)
+```
+```{r}
+summary(pca.train) 
+```
+
+The summary table above also shows that the first 4 principle components explain around 73% of the total variances. And the cumulative proportion of variance increases to 85% and 96% when we take 5 and 6 prinpicle components.
+
+## 3.Generate Scree Plots and select number of components you would retain.
+According to the PVE Plot and Scree Plot below, we can see that when the number of components equals to 5, it already explains over 85% of the variances, which is a reasonable choice.
+```{r}
+pve= 100*pca.train$sdev^2/sum(pca.train$sdev^2)
+par(mfrow =c(1,2))
+#Plot PVE of principle components
+plot(pve, type ="o", ylab="PVE", xlab="Principal Component", main= "PVE Plot", col ="blue")
+
+#Plot Scree Plot of principle components
+plot(cumsum (pve), type="o", ylab ="VAF", xlab="Principal Component", main="Scree Plot", col ="brown3 ")
+```
+
+## 4.Plot Component 1 loadings (x-axis) vs Component 2 loadings (y-axis). Use this plot to intepret and name the Components. 
+**Repeat this by plotting Component 1 separately vs all components you decided to retain from Step 3 (Component 3, Component 4, etc). Make sure to intepret each of the components you decide to retain. In case a component is not interpretable, note that.**
+```{r}
+library(ggbiplot)
+#Biplot of PC1 loadings vs PC2 loadings
+ggbiplot(pca.train, choices=c(1,2), obs.scale=1, var.scale=1, ellipse=TRUE, circle=TRUE)+
+  theme(legend.direction = 'horizontal', legend.position = 'top')
+```
+
+From the biplot of PC1 and PC2, we can observe that:
+
+1) Loadings of amount, duration and installment percentage of disposable income are roughly in the PC1 dimention. Component 1 could be implied as the employment status since stable and highly-paid professionals tend to have more disposable income which wins lower installment rate. They also tend to gain higher credit amount and longer duration as they usually pay balance timely.
+
+2) Loadings of age, residence duration, number of people maintenance, number of existing credit are highly-overlapped, directing to the positive PC2 dimention. Component 2 could be implied as the age, since elder people tend to live in the same place longer, and have more home loans to manage and more people for maintenance.
+
+```{r}
+#Biplot of PC1 loadings vs PC3 loadings
+ggbiplot(pca.train, choices=c(1,3), obs.scale=1, var.scale=1, ellipse=TRUE, circle=TRUE)+
+  theme(legend.direction = 'horizontal', legend.position = 'top')
+```
+
+From the biplot of PC1 and PC3, we can observe that loadings of installment rate percentage, number of people maintenance, number of existing credit are roughly in the same dimension. PC3 could be implied as income level. The more income, the lower installment rate, the more people maintance and existing credit.
+
+```{r}
+#Biplot of PC1 loadings vs PC4 loadings
+ggbiplot(pca.train, choices=c(1,4), obs.scale=1, var.scale=1, ellipse=TRUE, circle=TRUE)+
+  theme(legend.direction = 'horizontal', legend.position = 'top')
+```
+
+From the biplot of PC1 and PC4, we can observe that the loadings of installment rate percentage, residence duration and number of existing credit are roughly in the same dimension. PC4 could be implied as employment status. Employees with higher salary tend to have lower installment rate and more existing credit. However, the implication of residence duration here is hard to interpret.
+
+```{r}
+#Biplot of PC1 loadings vs PC5 loadings
+ggbiplot(pca.train, choices=c(1,5), obs.scale=1, var.scale=1, ellipse=TRUE, circle=TRUE)+
+  theme(legend.direction = 'horizontal', legend.position = 'top')
+```
+
+From the biplot of PC1 and PC5, we can observe the loadings of existing credit number and number of people maintenance are roughly in the same dimension. However, this component is hard to explain since there are large angles among these two loading vectors and loading of installment variable in between. So, it's difficult to interpret PC5 by grouping loadings and tell common features.
+
+## 5.Show that Component loadings are orthogonal.
+We can get the loadings matrix (i.e. eigenvectors of the correlation matrix) as below. They are orthogonal because the values (i.e. dot product of component loadings) apart from the diagnol are all 0. And they are also orthonomal because `$‖u_j‖$=1` for each eigenvector $u_j$.
+```{r}
+pca.train$rotation # Component loadings
+```
+```{r}
+round(t(pca.train$rotation)%*%pca.train$rotation,2)
+```
+
+## 6.Show that Component scores are orthogonal.
+```{r}
+head(pca.train$x) #Component scores
+```
+
+We can get the covariance matrix of PCA score data as below. Component scores are orthogonal, because the values (i.e. dot product of component scores) apart from the diagnol are all 0.
+```{r}
+round(cov(pca.train$x),2)
+```
+
+## 7&8.Perform Holdout validation of Principal Components solution. Compute the VAF in the Holdout sample. That yields a measure of Holdout performance.
+```{r}
+#Holdout validation with 5 principal components solution
+x=prcomp(Gtrain,retx=TRUE)
+round(cor(as.vector(Gtrain), as.vector(x$x[,1:5] %*% t(x$rotation)[1:5,])),2)
+y= predict(x, newdata=Gtest)
+round(cor(as.vector(Gtest), as.vector(y[,1:5]%*% t(x$rotation)[1:5,])),2)
+```
+```{r}
+plot(x)
+```
+```{r}
+summary(x)
+```
+
+The Holdout performance is good because the VAF of holdout set is close to the VAF of training set, both are over 85%.
+
+## 9.Rotate the component loadings using varimax rotation. 
+**Use R function `varimax()` for it. Look at the Loadings from the varimax rotation, does it yield any different intepretation of the Principal Components?**
+
+Varimax searches for a rotation (i.e. a linear combination) of the original factors such that the variance of the loadings is maximized. I first use `Varimax()` to obtain the loadings from the varimax rotation, and than compared with the original loadings.
+```{r}
+#Loadings from the varimax rotation
+y=varimax(x$rotation[,1:5])
+rotatedloadings<- y$loadings
+rotatedloadings
+```
+```{r}
+#Original loadings
+orig.loadings<- pca.train$rotation[,1:5]
+orig.loadings
+```
+
+We can observe that the varimax rotation procedure simplifies the factor structure, amplifying large loadings in each component, whereas driving small loadings towards to zero. In this case, each variable is either clearly important or clearly unimportant in a rotated component, which makes the intepretation much easier. 
+
+To visualize the loading difference, I also plot the loadings before and after rotation using `PCAmixdata`. 
+```{r}
+library(PCAmixdata)
+split <- splitmix(Gtrain)
+X1 <- split$X.quanti 
+X2 <- split$X.quali 
+train.pcamix <- PCAmix(X.quanti=X1, X.quali=X2,rename.level=TRUE,graph=FALSE)
+train.pcarot <- PCArot(train.pcamix,dim=5,graph=FALSE)
+```
+```{r}
+par(mfrow=c(2,2))
+#Biplot of PC1 loadings vs PC2 loadings
+plot(train.pcamix,choice="sqload", coloring.var=FALSE, leg=TRUE,axes=c(1,2),
+     main="Variables before rotation", xlim=c(0,1), ylim=c(0,1))
+plot(train.pcarot,choice="sqload", coloring.var=FALSE, leg=TRUE,axes=c(1,2),
+     main="Variables after rotation", xlim=c(0,1), ylim=c(0,1))
+
+#Biplot of PC1 loadings vs PC3 loadings
+plot(train.pcamix,choice="sqload", coloring.var=FALSE, leg=TRUE,axes=c(1,3),
+     main="Variables before rotation", xlim=c(0,1), ylim=c(0,1))
+plot(train.pcarot,choice="sqload", coloring.var=FALSE, leg=TRUE,axes=c(1,3),
+     main="Variables after rotation", xlim=c(0,1), ylim=c(0,1))
+```
+```{r}
+par(mfrow=c(2,2))
+#Biplot of PC1 loadings vs PC4 loadings
+plot(train.pcamix,choice="sqload", coloring.var=FALSE, leg=TRUE,axes=c(1,4),
+     main="Variables before rotation", xlim=c(0,1), ylim=c(0,1))
+plot(train.pcarot,choice="sqload", coloring.var=FALSE, leg=TRUE,axes=c(1,4),
+     main="Variables after rotation", xlim=c(0,1), ylim=c(0,1))
+
+#Biplot of PC1 loadings vs PC5 loadings
+plot(train.pcamix,choice="sqload", coloring.var=FALSE, leg=TRUE,axes=c(1,5),
+     main="Variables before rotation", xlim=c(0,1), ylim=c(0,1))
+plot(train.pcarot,choice="sqload", coloring.var=FALSE, leg=TRUE,axes=c(1,5),
+     main="Variables after rotation", xlim=c(0,1), ylim=c(0,1))
+```
+
+Compared with the original model, we can see that in the rotated model:
+
+1) **For principle component 1**: Duration and Amount become the 2 most important variables. This component can be interpreted as employment status, since professionals with highly-paid careers tend to have larger credit amount and longer duration of credits in months.
+
+2) **For principle component 2**: Residence Duration and Age become the 2 most important variables. This component can be indicated as age, since elder people have longer residence duration.
+
+3) **For principle component 3**: Installment Rate Percentage become the most important variable. This component can be indicated as marriage status, since families have larger need to take loans for house, car, TV/Electronic Goods, etc. And younger couples may have higher installment rate percentage of disposable income than elder couples.
+
+4) **For principle component 4**: NumberExistingCredits become the most important variable. This component can be indicated as employment status, since professionals with highly-paid careers tend to accumulate more credits due to business travels.
+
+5) **For principle component 5**: NumberPeopleMaintenance become the most important variable. This component can be indicated as income level, since people with lower income tend to have higher debt and have more prople for maintenance.
+
+In addition, I compared the R-squares of the original loadings and the rotated loadings. 
+We can observe that the R-squares of the original loadings and the rotated loadings are the same, which makes sense intuitively since the rotation of loadings just relocate observations without changing the variance expained.
+```{r}
+#R-square of the origianl scaled training data
+x=prcomp(Gtrain,retx=TRUE)
+Rsq.orig<- cor(as.vector(Gtrain), as.vector(x$x[,1:5] %*% t(x$rotation)[1:5,]))^2
+#R-square of the rotated scaled training data
+Rsq.rotated<- cor(as.vector(Gtrain), as.vector(x$x[,1:5] %*% y$rotmat %*% t(y$rotmat) %*% t(x$rotation)[1:5,]))^2
+cbind(Rsq.orig, Rsq.rotated)
+```
+ 
