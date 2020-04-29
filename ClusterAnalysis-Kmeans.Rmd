@@ -1,0 +1,295 @@
+---
+title: 'Data Mining: Cluster Analysis of GermanCredit Data'
+author: "Shuang (Sophie) Hu"
+date: "1/22/2020"
+---
+
+## Numeric Features Selection
+**1.Select the numeric variables that you think are appropriate and useful**
+
+I download the GermanCredit data from "caret" package, and select all the 7 numerical columns as my features. Because the inclusion of all features is the most descriptive of customers' demographics, characteristics and consumption history.
+```{r}
+library(caret)
+data("GermanCredit")
+GermanCredit.data<- GermanCredit[,1:7]
+head(GermanCredit.data)
+```
+I split the data into training set (70%) and test set (30%), then scaled the data into standardized z values.
+```{r}
+#Split the training and test sets
+require(caTools)
+set.seed(123)
+sample=sample.split(GermanCredit.data, SplitRatio=0.7)
+train=subset(GermanCredit.data,sample ==TRUE) 
+test=subset(GermanCredit.data,sample ==FALSE)
+
+#Scale the training and test data
+train.s<- scale(train)
+head(train.s)
+```
+```{r}
+#Use the means and standard deviations from the training set to scale the test set
+test.s<- scale(test, center=colMeans(train), scale=apply(train,2,sd))
+head(test.s)
+```
+The final feature selection is shown below.
+```{r}
+par(mfrow=c(2,4))
+lapply(1:ncol(train.s), function(x){
+  hist(train[,x], main=colnames(train.s)[x]) })
+```
+
+## Kmeans Clustering
+**2&3.Generate the K-means solution. Extract 2-10 k-means clusters using the variable set. Present the Variance-Accounted-For (i.e.VAF or R-square). Run at least 50-100 ramdom starts**
+```{r}
+km<- data.frame()
+for (k in 2:10){
+  set.seed(1)
+  km.train<- kmeans(train.s, centers=k, nstart=100)
+  train.VAF<- 1- km.train$tot.withinss/km.train$totss
+  
+  km.test<- kmeans(test.s, centers=km.train$centers, nstart=1)
+  test.VAF<- 1- km.test$tot.withinss/km.train$totss
+  
+  km.res <- cbind(k, train.VAF, test.VAF)
+  km<- rbind(km, km.res)
+}
+km[-10,]
+```
+
+## Scree test and plot
+**4&5.Perform Scree tests to choose appropriate number of K-means clusters.Show the Scree plot**
+
+From the Scree plot below, we can find that 4~6 clusters could be appropriate options. 
+```{r}
+par(mfrow=c(1,2))
+plot(km$k, km[,'train.VAF'], type ="b", xlab="Number of Clusters", ylab="Variance-Accounted-For", main="Scree Plot of Training Set", col ="blue")
+plot(km$k, km[,'test.VAF'], type ="b", xlab="Number of Clusters", ylab="Variance-Accounted-For", main="Scree Plot of Test Set", col ="brown")
+```
+
+**6.Choose 1 K-means solution to retain from the many solutions that you've generated. Note: use the criteria of VAF, interpretability of the segments, doing well in Holdout (Use VAF and relative cluster sizes as measures of stability)**
+
+Based on Scree test, I looked deeper into `k=4`,`k=5` and `k=6`. The following graphs show the clusters visually.
+```{r}
+set.seed(1)
+k4.train<- kmeans(train.s, centers = 4, nstart = 100)
+k5.train<- kmeans(train.s, centers = 5, nstart = 100)
+k6.train<- kmeans(train.s, centers = 6, nstart = 100)
+k4.test<- kmeans(test.s, centers = k4.train$centers, nstart = 1)
+k5.test<- kmeans(test.s, centers = k5.train$centers, nstart = 1)
+k6.test<- kmeans(test.s, centers = k6.train$centers, nstart = 1)
+
+#Cluster plots comparison
+library(cluster)
+library(factoextra)
+library(gridExtra)
+p4.train<- fviz_cluster(k4.train, geom = "point",  data = train.s) + ggtitle("train: k = 4")
+p5.train<- fviz_cluster(k5.train, geom = "point",  data = train.s) + ggtitle("train: k = 5")
+p6.train<- fviz_cluster(k6.train, geom = "point",  data = train.s) + ggtitle("train: k = 6")
+p4.test<- fviz_cluster(k4.test, geom = "point",  data = test.s) + ggtitle("test: k = 4")
+p5.test<- fviz_cluster(k5.test, geom = "point",  data = test.s) + ggtitle("test: k = 5")
+p6.test<- fviz_cluster(k6.test, geom = "point",  data = test.s) + ggtitle("test: k = 6")
+grid.arrange(p4.train, p5.train,p6.train, p4.test, p5.test, p6.test, nrow = 2)
+```
+
+To further examine the interpretability and choose the optimal number of clusters, I compared VAF, cluster means, sample sizes of training and test sets as measurements for k=4,5,6.
+
+**1) VAF:** The previous Scree plot shows that 6 clusters has the highest VAF: 52% for the training set, 66% for the test set, which means it does well in holdout.
+
+**2) Cluster Mean:** In the following plots, the horizontal axis stands for the 7 customer features, whereas the vertical axis shows the mean value of each cluster. We can see that generally the centers of training set and test set are close, and k=6 performs best among the three choices.
+```{r}
+library(tidyr)
+library(ggplot2)
+
+k4.centers <- data.frame()
+for (i in 1:4){
+  sub<- data.frame(cbind(k4.train$centers[i,],k4.test$centers[i,]))
+  colnames(sub) <- c('train','test')
+  sub$feature <- rownames(sub)
+  sub<- gather(sub,key='set',value='center',-feature)
+  sub$cluster = i
+  k4.centers <- rbind(k4.centers,sub)
+}
+#Plot centers of 4 clusters
+p4.centers<- 
+     ggplot(k4.centers,aes(feature,center,fill=set))+
+     geom_bar(position="dodge",stat="identity")+
+     facet_wrap(~cluster,nrow=1)+
+     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0),
+           axis.line = element_blank(),
+           axis.ticks.x = element_blank()) 
+p4.centers
+```
+```{r}
+k5.centers <- data.frame()
+for (i in 1:5){
+  sub2<- data.frame(cbind(k5.train$centers[i,],k5.test$centers[i,]))
+  colnames(sub2) <- c('train','test')
+  sub2$feature <- rownames(sub2)
+  sub2<- gather(sub2,key='set',value='center',-feature)
+  sub2$cluster = i
+  k5.centers <- rbind(k5.centers,sub2)
+}
+#Plot centers of 5 clusters
+p5.centers<- 
+     ggplot(k5.centers,aes(feature,center,fill=set))+
+     geom_bar(position="dodge",stat="identity")+
+     facet_wrap(~cluster,nrow=1)+
+     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0),
+           axis.line = element_blank(),
+           axis.ticks.x = element_blank()) 
+p5.centers
+```
+```{r}
+k6.centers <- data.frame()
+for (i in 1:6){
+  sub3<- data.frame(cbind(k6.train$centers[i,],k6.test$centers[i,]))
+  colnames(sub3) <- c('train','test')
+  sub3$feature <- rownames(sub3)
+  sub3<- gather(sub3,key='set',value='center',-feature)
+  sub3$cluster = i
+  k6.centers <- rbind(k6.centers,sub3)
+}
+#Plot centers of 6 clusters
+p6.centers<- 
+     ggplot(k6.centers,aes(feature,center,fill=set))+
+     geom_bar(position="dodge",stat="identity")+
+     facet_wrap(~cluster,nrow=1)+
+     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0),
+           axis.line = element_blank(),
+           axis.ticks.x = element_blank()) 
+p6.centers
+```
+
+In the case of 6 clusters, the centers are interpretable. Based on the `p6.center` graph above, we can observe major customer features in each segment as follows in both training and test set.
+*Cluster 1*: Customers with high installment rate percentage and long residence duration
+*Cluster 2*: Customers with greater age and long residence duration
+*Cluster 3*: Customers with high installment rate percentage and short residence duration
+*Cluster 4*: Customers with large credit amount and long duration
+*Cluster 5*: Customers with large number of people being liable to provide maintenance for
+*Cluster 6*: Customers with low installment rate percentage
+
+**3) Cluster size:** I examined the cluster size as a measure of stability. Since the split raio of training and test sets is 7:3, we need to divide the cluster sizes by the size of training and test set relatively for fair comparison.
+```{r}
+k4.relative.size<- data.frame(cbind(cluster=1:4,
+                                    k4.relative.train.size=k4.train$size/nrow(train.s),
+                                    k4.relative.test.size=k4.test$size/nrow(test.s)))
+k5.relative.size<- data.frame(cbind(cluster=1:5,
+                                    k5.relative.train.size=k5.train$size/nrow(train.s),
+                                    k5.relative.test.size=k5.test$size/nrow(test.s)))
+k6.relative.size<- data.frame(cbind(cluster=1:6,
+                                    k6.relative.train.size=k6.train$size/nrow(train.s),
+                                    k6.relative.test.size=k6.test$size/nrow(test.s)))
+```
+I plotted the relative sizes of 2 data sets in different clusters. The closer the dots locate to the line with `slope=1`, the much similar are the cluster sizes. The graphs show that the cluster sizes are all similar between training and test when k=4,5,6, while k=5 is relatively stronger in this case, k=6 still performs better than k=4. 
+```{r}
+k4.size.p<- ggplot(k4.relative.size, aes(x=k4.relative.train.size, y=k4.relative.test.size))+ 
+            geom_point()+
+            geom_abline(slope = 1, intercept = 0, col = 'blue')+
+            ggtitle("k = 4")
+k5.size.p<- ggplot(k5.relative.size, aes(x=k5.relative.train.size, y=k5.relative.test.size))+ 
+            geom_point()+
+            geom_abline(slope = 1, intercept = 0, col = 'blue')+
+            ggtitle("k = 5")
+k6.size.p<- ggplot(k6.relative.size, aes(x=k6.relative.train.size, y=k6.relative.test.size))+ 
+            geom_point()+
+            geom_abline(slope = 1, intercept = 0, col = 'blue')+
+            ggtitle("k = 6")
+grid.arrange(k4.size.p, k5.size.p, k6.size.p, nrow = 2)
+```
+
+In conclusion, I choose k=6 as the optimal solution. Because in this case, the VAF is the largest, the centers of the 6 clusters are interpretable with strong consistency between training and test sets. Moreover, the stability of relative cluster sizes of training and test sets is still strong on the whole.
+
+## Komeans Clustering
+**7.Generate 3-5 Komeans clusters. Start from 50-100 random starts (Note: Komeans does not give you an option of starting from a given set of means). Hence you cannot easily perform holdout validation**
+
+As I choosed 6 K-means clusters in question 6, it is interesting to check the performance of 6 Komeans as well. Hence, I generate 3-6 Komeans cluster for analysis.
+```{r}
+source("../Komeans.function.R") #call the Komeans function
+K<- 3:6
+kom.result<- lapply(K, function(k){
+  kom<- list()
+  kom$k<- k
+  kom.train<- komeans(train.s, nclust=k, lnorm=2, nloops=50, tolerance=0.001, seed=2)
+  kom$train.VAF<- kom.train$VAF
+  return(list(kom=kom, kom.train=kom.train))
+})
+```
+```{r}
+#VAF of Kmeans and Komeans clusters for training test
+kom.train.df<- data.frame()
+for (i in 1:4){
+  kom.train.df<- rbind(kom.train.df, kom.result[[i]]$kom$train.VAF)
+}
+colnames(kom.train.df) <- c('komeansVAF')
+cbind(k=K, kmeansVAF=km$train.VAF[3:6], komeansVAF=kom.train.df)
+```
+
+## Kmeans and Komeans Comparison
+**8.Compare the chosen K-means solution with a Komeans solution from an interpretability perspective.(Note:For fair comparision, eg.Compare a 3-cluster K-means with only a 3-cluster Komeans solutions)**
+I compared the centers of the 6-cluster K-means solution with the 6-cluster Komeans solution.
+```{r}
+#Delete 6-cluster K-means of test data set
+k6.centers.train<- k6.centers[!(k6.centers$set %in% c("test")),]
+k6.centers.train$set <- 'kmeans'
+
+#Plot of 6-cluster K-means
+ggplot(k6.centers.train,aes(feature,center,fill=set))+
+     geom_bar(position="dodge",stat="identity")+
+     facet_wrap(~cluster,nrow=1)+
+     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0),
+           axis.line = element_blank(),
+           axis.ticks.x = element_blank())
+```
+```{r}
+#Extract 6-cluster Komeans and reshape the data frame
+kom.centroids.df<- kom.result[[4]]$kom.train$Centroids
+colnames(kom.centroids.df) <- as.vector(colnames(train.s))
+kom.centroids.df <- data.frame(kom.centroids.df)
+kom.centroids.df$cluster <- rownames(kom.centroids.df)
+kom.centroids.df<- gather(kom.centroids.df,key='feature',value='center',-cluster)
+kom.centroids.df$set <- 'komeans'
+
+#Plot of 6-cluster Komeans
+ggplot(kom.centroids.df,aes(feature,center,fill=set))+
+     geom_bar(position="dodge",stat="identity")+
+     facet_wrap(~cluster,nrow=1)+
+     scale_fill_manual(values = c("#468189"))+
+     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0),
+           axis.line = element_blank(),
+           axis.ticks.x = element_blank())
+```
+
+We can interpret the Komeans of the customer segments from the graph above.
+*Cluster 1*: Customers with small credit amount, short duration. They could be young professionals who just start job with short-term debt.
+*Cluster 2*: Customers with greater age and long residence duration. They could be old local families.
+*Cluster 3*: Customers with large credit amount, long duration and low installment rate percentage They could be married people who have loans on properties.
+*Cluster 4*: Customers with large number of existing credit at this bank. They are people with many debt.
+*Cluster 5*: Customers with large credit amount, long duration and high installment rate percentage. They could be young couples who don't have many savings but needs to buy house or cars.
+*Cluster 6*: Customers with large number of people being liable to provide maintenance for. They could be recent graduates who do not secured a job and have a lot of debt. 
+
+## Summary of Final Solution
+**9.Summarize results and interpret the clusters you choose as your final solution**
+
+My final solution is 6-cluster Komeans because of the following reasons:
+1) 6-cluster Komeans has greater VAF (~68%)
+2) The Komeans value of each segment is still interpretable
+3) There is some similar features between corresponding clusters generated by the Kmeans and Komeans approach. For example, cluster 6 in Komeans looks similar to cluster 5 in Kmeans. However, Komeans approach allows overlapped features among clusters, which helps to observe dynamic features of each customer segments without exclusive separation. 
+
+## Approach to Recruit Focus Groups
+**10.You are given the task of recruiting 30 people (per segment) into these segments for focus groups and other follow-up A&U (Attitudinal and Usage studies).** 
+a. What approach will you take to recruit people over the telephone?
+b. Assume consumers who are recruited will be reimbursed for either coming to a focus group or for A&U surveys. Which of the consumers will you try to recruit?
+c. How will you identify if a new recruit belongs to a particular segment?
+
+**Step 1: Build the candidate list to reach out**
+To recruit people over the telephone, I will take 2 major approaches:
+1) *Random digital dial phone calls*: produce zip code and random numbers within those targted geographical areas
+2) *Database recruiting*: turn to marketing research associates for potential focus group candidates in their existing database
+
+**Step 2: Conduct phone screening based on the 7 features**
+Ask the candidates about screener questions to collect their information on demographics, loans, bank and residence. Example questions include what's your age, how many credits do you have, what's your installment rate in percentage of disposable income, etc. 
+Apart from collecting the numeric data, I may also ask for qualitative information about their attitudes in using the credit card, or the reasons that they do not use the card, which might be helpful to better describe customer profiles. 
+
+**Step 3: Match the recruits to corresponding segment**
+To identify if a new recruit belongs to a particular segment, I will scale their data and calculate the Euclidean distance between the values and the feature centriods of the 6 clusters. If the Euclidean distance value falls in a pre-determined floating range (eg.-5% ~ +5%), then we could assign the new recruit to the corresponding cluster.
