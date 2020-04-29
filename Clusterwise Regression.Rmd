@@ -1,0 +1,200 @@
+---
+title: "Clusterwise Regression"
+author: "Shuang (Sophie) Hu"
+date: "3/3/2020"
+---
+
+# Part 1: Clusterwise Regression
+#### 1. Use the training and holdout samples for the GermanCredit data set you used for the logistic Regression Analysis. Call them Train and Holdout.
+```{r}
+library(caret)
+data("GermanCredit")
+```
+```{r}
+# Split the training and holdout sets
+set.seed(1234)
+nSample= nrow(GermanCredit)
+Train.dat= sample(1:nSample, as.integer(nSample*0.7), replace=FALSE)
+Train=GermanCredit[Train.dat,]
+Holdout.dat= -Train.dat
+Holdout=GermanCredit[Holdout.dat,]
+```
+
+#### 2. Use the Train data set to build a Clusterwise Regression Model. 
+**Choose "Amount" as the dependent variable. Build 1，2 and 3 cluster solutions**
+a) Use the `clustreg()` function. Don't use the "Class" variable as an independent variable.
+b) You can use only **numeric independent variables** as predictors.
+c) Plot $R^2$ as a function of the number of clusters.
+
+I choose all the numeric independent variables to make the analysis comprehensive.
+```{r}
+# Call functions
+source("clustreg.R")
+source("clustreg.predict.R")
+```
+
+First, create 3 clusterwise regression models using function `clustreg`.
+```{r}
+# clustreg = function(data,K-cluster number, tries, sed, iteration number)
+clustreg1=clustreg(scale(Train[,c(2,1,3,4,5,6,7)]),1,1,1121,1)
+clustreg2=clustreg(scale(Train[,c(2,1,3,4,5,6,7)]),2,2,1121,10)
+clustreg3=clustreg(scale(Train[,c(2,1,3,4,5,6,7)]),3,2,1121,10)
+```
+
+Then，check the results of the 3 cluster-wise solutions.
+```{r}
+# 1-cluster results
+clustreg1$results
+```
+We can observe that in this 1-cluster, duration, the installment rate percentage and age are the significant varibles at 95% level. Duration is positively correlated with amount strongly.  
+
+```{r}
+# 2-cluster results
+clustreg2$results[[1]]
+clustreg2$results[[2]]
+```
+
+We can observe that in this 2-cluster solution:
+
+**Cluster 1:** The duration, installment rate percentage and age are the significant varibles at 95% level. The magnitude of coefficent estimate shows that, installment rate percentage has a negative correlation with amount, and the duration correlates with amount positively.
+**Cluster 2:** All predictors are significant varibles at 95% level. The magnitude of coefficent estimates shows that duration is strongly correlated with amount.
+
+We can check the observations of second cluster in the 2-cluster solution as below.
+```{r}
+head(Train[clustreg2$cluster==2,c(2,1,3,4,5,6,7)])
+```
+```{r}
+# 3-cluster results
+clustreg3$results[[1]]
+clustreg3$results[[2]]
+```
+We can observe that in this 3-cluster solution:
+**Cluster 1:** Predictors besides age are all significant varibles at 95% level. The magnitude of coefficent estimates are large in general. It shows that, installment rate percentage and number of people maintenance have strong negative correlations with amount. 
+**Cluster 2:** All predictors are significant varibles at 95% level. The magnitude of coefficent estimates are smaller than 1-cluster solution. It shows that residence duration is negatively correlated with amount. Duration, age, number of existing credits and number of people maintenance are positively correlated with amount.
+**Cluster 3:** Predictors besides residence duration, number of existing credits and number of people maintenance are all significant varibles at 95% level. The magnitude of coefficent estimates are small in general. It shows that installment rate percentage is negatively correlated with amount. Duration has relatively strong positive correlation with amount.
+
+Find and plot best R-squares with cluster number.
+```{r}
+Train.Rsquare<- c(Cluster1=clustreg1$rsq.best,Cluster2=clustreg2$rsq.best,Cluster3=clustreg3$rsq.best)
+Train.Rsquare
+```
+
+The "elbow" shape appears at cluster=2 in the plot, meaning k=2 is a reasonable choice.
+```{r}
+# Plot R-squared with cluster number
+plot(c(1,2,3),
+     c(clustreg1$rsq.best,clustreg2$rsq.best,clustreg3$rsq.best),
+     ylim=c(0,1), type="l",col=4, main="VAF Plot for GermanCredit Data: Cluster-wise Regression", ylab="Variance Accounted For",xlab="Number of Clusters") 
+```
+
+The R-squared of the 1-cluster solution is low, which is 0.491.
+R-squared of 2-cluster solution is 0.812. There are 564 observations (78%) in cluster 1 and 154 observations (22%) in cluster 2.
+R-squared of 3-cluster solution is 0.873. There are 110 observations (15.7%) in cluster 1, 170 observations (24.3%) in cluster 2 and 420 observations (60%) in cluster 3.
+```{r}
+# 2-Cluster R-squared breakdown
+CluesterRsq.train<- clustreg2$rsq
+ClusterCount.train<- table((clustreg2$cluster))
+ClusterPer.train<-round(prop.table(table((clustreg2$cluster))),3)
+CluesterRsq.train
+ClusterCount.train
+ClusterPer.train
+```
+```{r}
+# 3-Cluster R-squared breakdown
+CluesterRsq.train3<- clustreg3$rsq
+ClusterCount.train3<- table((clustreg3$cluster))
+ClusterPer.train3<-round(prop.table(table((clustreg3$cluster))),3)
+CluesterRsq.train3
+ClusterCount.train3
+ClusterPer.train3
+```
+
+
+#### 3&4. Perform Holdout validation testing of the clusterwise regressions using function `clustreg.predict()` function. Choose a model with the best regression interpretation on Training data, R squared and related significance, and the best holdout performance
+```{r}
+# Holdout validation
+holdout.predict.1<- clustreg.predict(clustreg1, data.frame(scale(Holdout[,c(2,1,3,4,5,6,7)])))
+holdout.predict.1.rsq<- holdout.predict.1$rsq
+holdout.predict.2<- clustreg.predict(clustreg2, data.frame(scale(Holdout[,c(2,1,3,4,5,6,7)])))
+holdout.predict.2.rsq<- holdout.predict.2$rsq
+holdout.predict.3<- clustreg.predict(clustreg3, data.frame(scale(Holdout[,c(2,1,3,4,5,6,7)])))
+holdout.predict.3.rsq<- holdout.predict.3$rsq
+holdout.predict.rsq<- cbind(holdout.predict.1.rsq, holdout.predict.2.rsq, holdout.predict.3.rsq)
+holdout.predict.rsq
+```
+```{r}
+# Plot holdout R-squared with cluster number
+plot(c(1,2,3),
+     c(holdout.predict.1$rsq,holdout.predict.2$rsq,holdout.predict.3$rsq),
+     ylim=c(0,1), type="l",col=4, main="VAF Plot for GermanCredit Data: Cluster-wise Regression", ylab="Variance Accounted For",xlab="Number of Clusters") 
+```
+
+We can observe that, similar as training set, the "elbow" pattern also appears at cluster=2 with holdout data. 
+The R-squared of the 1-cluster solution is low, which is 0.516.
+R-squared of 2-cluster solution is 0.832. There are 238 observations (79.3%) in cluster 1 and 62 observations (20.7%) in cluster 2.
+R-squared of 3-cluster solution is 0.857. There are 44 observations (14.7%) in cluster 1, 63 observations (21%) in cluster 2 and 193 observations (64.3%) in cluster 3.
+```{r}
+# 2-Cluster R-squared breakdown
+CluesterRsq.holdout<- holdout.predict.2.rsq
+ClusterCount.holdout<- table((holdout.predict.2$cluster))
+ClusterPer.holdout<- round(prop.table(table((holdout.predict.2$cluster))),3)
+CluesterRsq.holdout
+ClusterCount.holdout
+ClusterPer.holdout
+```
+```{r}
+# 3-Cluster R-squared breakdown
+CluesterRsq.holdout3<- holdout.predict.3.rsq
+ClusterCount.holdout3<- table((holdout.predict.3$cluster))
+ClusterPer.holdout3<- round(prop.table(table((holdout.predict.3$cluster))),3)
+CluesterRsq.holdout3
+ClusterCount.holdout3
+ClusterPer.holdout3
+```
+
+
+#### 5. Summarize the results for both Training and Holdout.
+First, summarize the train R square, holdout R square, and the percentage decrease from train to holdout R square.
+```{r}
+PerDec=(holdout.predict.rsq-Train.Rsquare)/Train.Rsquare
+summary<- data.frame(rbind(Train.Rsquare, holdout.predict.rsq, PerDec))
+row.names(summary) = c("Train.Rsq","Holdout.Rsq","PercentageDec")
+summary
+```
+```{r}
+# Reorganize the summary table for plot
+summary$Measure<- c("Train.Rsq", "Holdout.Rsq","PercentageDec")
+summary_table<- data.frame(c(summary$Cluster1, summary$Cluster2, summary$Cluster3))
+summary_table$measure<- c(summary$Measure, summary$Measure, summary$Measure)
+summary_table$cluster<- c("Cluster1", "Cluster1","Cluster1","Cluster2", "Cluster2","Cluster2","Cluster3", "Cluster3","Cluster3")
+colnames(summary_table)<- c("value","measure","cluster")
+```
+
+```{r}
+# Plot the R-squares of different solutions
+ggplot(summary_table, aes(x=measure, y=value, group=cluster, color=cluster)) +
+  geom_line(aes(linetype=cluster, color=cluster))+
+  geom_point(aes(shape=cluster, color=cluster))
+```
+
+Then, summarize the sample size of clusters in train and holdout conditions. We can see below that the sample proportions of clusters are close between training and holdout data, most difference are only 1%-4%
+```{r}
+# Comparison of 2-cluster solutions
+rbind(ClusterCount.train, ClusterCount.holdout)
+rbind(ClusterPer.train, ClusterPer.holdout)
+```
+```{r}
+# Comparison of 3-cluster solutions
+rbind(ClusterCount.train3, ClusterCount.holdout3)
+rbind(ClusterPer.train3, ClusterPer.holdout3)
+```
+
+**Summary:**
+From the training plot and test plot of R squares: 
+
+1) 2-cluster solution is the best due to the highest marginal increase of R square due to 1 additional cluster. The R square even increases about 2.5% in holdout validation.
+2) 1-cluster solution is the worst since it has the lowest R square in train and holdout set. However, the R square increases about 5% in holdout validation.
+3) 3-cluster solution performs well with high R square, which is also close that of holdout R square. And the percentage decrease of R square from training to holdout set reaches 2%. 
+
+Overall, R-squared of training data is a bit larger than holdout set for 3-cluster solution, but holdout set outperforms the training data for 1-cluster and 2-cluster solutions. The sample size proportions of different clusters in training and holdout set are close, implying the cluster-wise regression model is reasonable.
+

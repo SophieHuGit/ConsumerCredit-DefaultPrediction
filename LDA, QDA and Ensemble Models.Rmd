@@ -1,0 +1,319 @@
+---
+title: "LDA, QDA and Ensemble Models"
+author: "Shuang (Sophie) Hu"
+date: "3/5/2020"
+---
+
+# Part 2: LDA, QDA and Ensemble Models
+####1&2&3. Use the Train data set to build LDA and QDA models using function `lda()` and `qda()` in package `MASS`. Perform holdout validation.
+a) Use the "Class" variable as the dependent variable
+b) Note: Be careful with the categorical predictors. Since LDA and QDA use within group covariance matrices, some of the dummies might give problems due to linear dependencies or taking on constant values across the groups. You may have to add predictors one at a time to assess which dummy predictor
+
+```{r}
+# Load data
+library(caret)
+data("GermanCredit")
+```
+
+Merge dummy variable columns into 1 with new column names
+```{r}
+# Dedummify categorical variables
+GermanCredit$CheckingAccountStatus<- names(GermanCredit[11:14])[max.col(GermanCredit[11:14])]
+GermanCredit$CreditHistory<- names(GermanCredit[15:19])[max.col(GermanCredit[15:19])]
+GermanCredit$CreditPurpose<- names(GermanCredit[20:30])[max.col(GermanCredit[20:30])]
+GermanCredit$SavingAccountBonds<- names(GermanCredit[31:35])[max.col(GermanCredit[31:35])]
+GermanCredit$EmploymentDuration<- names(GermanCredit[36:40])[max.col(GermanCredit[36:40])]
+GermanCredit$PersonalStatusSex<- names(GermanCredit[41:45])[max.col(GermanCredit[41:45])]
+GermanCredit$otherDebtorsGuarantors<- names(GermanCredit[46:48])[max.col(GermanCredit[46:48])]
+GermanCredit$Property<- names(GermanCredit[49:52])[max.col(GermanCredit[49:52])]
+GermanCredit$OtherInstallmentPlans<- names(GermanCredit[53:55])[max.col(GermanCredit[53:55])]
+GermanCredit$Housing<- names(GermanCredit[56:58])[max.col(GermanCredit[56:58])]
+GermanCredit$Job<- names(GermanCredit[59:62])[max.col(GermanCredit[59:62])]
+head(GermanCredit[,63:73])
+```
+```{r}
+#Assign values to the categorial values
+GermanCredit$CheckingAccountStatus<- as.numeric(c("CheckingAccountStatus.lt.0"="1","CheckingAccountStatus.0.to.200"="2","CheckingAccountStatus.gt.200"="3","CheckingAccountStatus.none"="4")[GermanCredit$CheckingAccountStatus])
+GermanCredit$CreditHistory<- as.numeric(c("CreditHistory.NoCredit.AllPaid"="1","CreditHistory.ThisBank.AllPaid"="2","CreditHistory.PaidDuly"="3","CreditHistory.Delay"="4","CreditHistory.Critical"="5")[GermanCredit$CreditHistory])
+GermanCredit$CreditPurpose<- as.numeric(c("Purpose.NewCar"="1","Purpose.UsedCar"="2","Purpose.Furniture.Equipment"="3","Purpose.Radio.Television"="4","Purpose.DomesticAppliance"="5","Purpose.Repairs"="6","Purpose.Education"="7","Purpose.Vacation"="8","Purpose.Retraining"="9","Purpose.Business"="10","Purpose.Other"="11")[GermanCredit$CreditPurpose])
+GermanCredit$SavingAccountBonds<- as.numeric(c("SavingsAccountBonds.lt.100"="1","SavingsAccountBonds.100.to.500"="2","SavingsAccountBonds.500.to.1000"="3","SavingsAccountBonds.gt.1000"="4","SavingsAccountBonds.Unknown"="5")[GermanCredit$SavingAccountBonds])
+GermanCredit$EmploymentDuration<- as.numeric(c("EmploymentDuration.lt.1"="1","EmploymentDuration.1.to.4"="2","EmploymentDuration.4.to.7"="3","EmploymentDuration.gt.7"="4","EmploymentDuration.Unemployed"="5")[GermanCredit$EmploymentDuration])
+GermanCredit$PersonalStatusSex<- as.numeric(c("Personal.Male.Divorced.Seperated"="1","Personal.Female.NotSingle"="2","Personal.Male.Single"="3","Personal.Male.Married.Widowed"="4","Personal.Female.Single"="5")[GermanCredit$PersonalStatusSex])
+GermanCredit$otherDebtorsGuarantors<- as.numeric(c("OtherDebtorsGuarantors.None"="1","OtherDebtorsGuarantors.CoApplicant"="2","OtherDebtorsGuarantors.Guarantor"="3")[GermanCredit$otherDebtorsGuarantors])
+GermanCredit$Property<- as.numeric(c("Property.RealEstate"="1","Property.Insurance"="2","Property.CarOther"="3","Property.Unknown"="4")[GermanCredit$Property])
+GermanCredit$OtherInstallmentPlans<- as.numeric(c("OtherInstallmentPlans.Bank"="1","OtherInstallmentPlans.Stores"="2","OtherInstallmentPlans.None"="3","Property.Unknown"="4")[GermanCredit$OtherInstallmentPlans])
+GermanCredit$Housing<- as.numeric(c("Housing.Rent"="1","Housing.Own"="2","Housing.ForFree"="3")[GermanCredit$Housing])
+GermanCredit$Job<- as.numeric(c("Job.UnemployedUnskilled"="1","Job.UnskilledResident"="2","Job.SkilledEmployee"="3","Job.Management.SelfEmp.HighlyQualified"="4")[GermanCredit$Job])
+GermanCredit.categorical<- GermanCredit[,63:73]
+head(GermanCredit.categorical)
+```
+```{r}
+GermanCredit<- data.frame(GermanCredit[,1:10],GermanCredit.categorical)
+head(GermanCredit)
+```
+
+```{r}
+# Split the training and holdout sets
+set.seed(1234)
+nSample= nrow(GermanCredit)
+Train.dat= sample(1:nSample, as.integer(nSample*0.7), replace=FALSE)
+Train=GermanCredit[Train.dat,]
+Holdout.dat= -Train.dat
+Holdout=GermanCredit[Holdout.dat,]
+```
+
+## LDA Model 
+```{r}
+library(MASS)
+# Fit LDA model 
+ldaModel<- lda(Class~., data=Train)
+ldaModel
+```
+```{r}
+lda.prob.train<- predict(ldaModel)$class
+confusionMatrix.lda.train<- confusionMatrix(Train$Class, lda.prob.train)
+confusionMatrix.lda.train
+```
+
+Perform Holdout validation testing of LDA using the Holdout sample.
+```{r}
+# LDA holdout validation
+lda.prob.holdout<- predict(ldaModel, newdata = Holdout)$class
+confusionMatrix.lda.holdout<- confusionMatrix(Holdout$Class, lda.prob.holdout)
+confusionMatrix.lda.holdout
+```
+Since we use prior probability, the group of estimate probability will be same with LDA and QDA. But the prediction results will be different in holdout validation.
+
+## QDA Model 
+```{r}
+# Fit QDA model
+qdaModel<- qda(Class~., data=Train)
+qdaModel
+```
+```{r}
+qda.prob.train<- predict(qdaModel)$class
+confusionMatrix.qda.train<- confusionMatrix(Train$Class,qda.prob.train)
+confusionMatrix.qda.train
+```
+
+Perform Holdout validation testing of QDA using the Holdout sample.
+```{r}
+# QDA holdout validation
+qda.prob.holdout<- predict(qdaModel, newdata = Holdout)$class
+confusionMatrix.qda.holdout<- confusionMatrix(Holdout$Class,qda.prob.holdout)
+confusionMatrix.qda.holdout
+```
+
+Since we use prior probability, the group of estimate probability will be same with LDA and QDA. But the prediction results will be different in holdout validation.
+
+Compare the performance measures of LDA and QDA.
+```{r}
+# Taining performance of LDA and QDA
+Accuracy.train<- rbind(lda.Accuracy=confusionMatrix.lda.train$overall[1], lda.Accuracy= confusionMatrix.qda.train$overall[1])
+Measures.train<- rbind(confusionMatrix.lda.train$byClass, confusionMatrix.qda.train$byClass)
+Performance.train<- data.frame(cbind(Accuracy.train,Measures.train))
+row.names(Performance.train)=c("LDA","QDA")
+Performance.train
+```
+```{r}
+# Holdout performance of LDA and QDA
+Accuracy.holdout<- rbind(lda.Accuracy=confusionMatrix.lda.holdout$overall[1], lda.Accuracy= confusionMatrix.qda.holdout$overall[1])
+Measures.holdout<- rbind(confusionMatrix.lda.holdout$byClass, confusionMatrix.qda.holdout$byClass)
+Performance.holdout<- data.frame(cbind(Accuracy.holdout,Measures.holdout))
+row.names(Performance.holdout)=c("LDA","QDA")
+Performance.holdout
+```
+We can observe that:
+1) In training set, both LDA and QDA achieve high accuracy, QDA achieves 81.4% which is a bit higher than LDA. We can receive higher sensitivity (68.9%) from LDA, whereas higher specificity (87.8%) from QDA. Precision (72.2%) is higher from QDA, whereas a bit higher recall (68.9%) from QDA. F1 score and prevalence are both higher in QDA.
+2) In holdout set, both LDA and QDA achieve high accuracy, LDA achieves 72.7% which is higher than LDA. We can receive higher sensitivity (56.5%) and higher specificity (77.5%) from LDA. Precision (47.3%) is higher from QDA, whereas a bit higher recall (56.5%) from LDA. We also get higher F1 score from LDA and higher prevalence from QDA.
+
+
+####4. Build the "Ensemble" model, and predict all observations in Training and Holdout data
+It takes the predictions of "Class" for each observation from the 4 models (Logistic Regression, Classification Tree, LDA and QDA predictive models). Then applied the "Majority Rule".
+
+Create the Ensemble model for train based on the majority result for each observation from the 4 models.
+```{r}
+library(MASS)
+set.seed(123)
+# Train the logistic regression model
+logisticModel<- glm(Class~.,data=Train,family=binomial(link=logit))
+# stepAIC(logisticModel) 
+```
+
+By using the `stepAIC` function in Assignment 4, we find the best model with lowest AIC 658.5 as below:
+```{r}
+logistic_model<- glm(formula = Class ~ Duration + Amount + InstallmentRatePercentage + 
+    Telephone + ForeignWorker + CheckingAccountStatus + CreditHistory + 
+    SavingAccountBonds + PersonalStatusSex + otherDebtorsGuarantors + 
+    Property + OtherInstallmentPlans + Housing, family = binomial(link = logit), 
+    data = Train)
+logistic_model
+```
+
+```{r}
+# Train the classification tree (i.e. the pruned tree with cost parameter=0.015949 in Assignment 4)
+library(rpart)
+set.seed(123)
+treeModel=rpart(formula=Class~., data=Train, control=rpart.control(cp=0.015949)) 
+
+# Predict the probabilities for training set 
+pred_logistic<- predict(logisticModel, Train ,type='response')
+# Use 0.5 as a threshhold to separate "Good=2" and "Bad=1" class
+pred_logistic[pred_logistic>=0.5]="2"
+pred_logistic[pred_logistic<0.5]="1"
+pred_tree<- predict(treeModel, Train, type='class')
+pred_lda<- lda.prob.train
+pred_qda<- qda.prob.train
+clf_response<- data.frame(cbind(pred_logistic,pred_tree,pred_lda,pred_qda))
+```
+
+Use the majority rule to generate the final prediction: 
+If >=3 out of the 4 models predict 2 ("Good"), assign the observation as 2; 
+If <=1 out of the 4 models predict 1 ("Bad"), assign the observation as 1;
+If 2 out of the 4 models predict 1 ("Good"), assign the observation 1 or 2 at random.
+```{r}
+# Count number of "2" in each row
+clf_response$Counter.2<- rowSums(clf_response == "2")
+# Majority vote
+clf_response$pred_ensemble<- clf_response$Counter.2
+clf_response$pred_ensemble[clf_response$Counter.2>=3]<- 2
+clf_response$pred_ensemble[clf_response$Counter.2<=1]<- 1
+clf_response$pred_ensemble[clf_response$Counter.2==2]<- sample(1:2,1)
+head(clf_response)
+```
+
+Create the Ensemble model for holdout based on the majority result for each observation from the 4 models.
+```{r}
+# Predict the probabilities for holdout set 
+pred_logistic_holdout<- predict(logisticModel, Holdout ,type='response')
+# Use 0.5 as a threshhold to separate "Good=2" and "Bad=1" class
+pred_logistic_holdout[pred_logistic_holdout>=0.5]="2"
+pred_logistic_holdout[pred_logistic_holdout<0.5]="1"
+pred_tree_holdout<- predict(treeModel, Holdout, type='class')
+pred_lda_holdout<- lda.prob.holdout
+pred_qda_holdout<- qda.prob.holdout
+clf_response_holdout<- data.frame(cbind(pred_logistic_holdout,pred_tree_holdout,
+                                        pred_lda_holdout,pred_qda_holdout))
+```
+
+Similarly, using majority rule to create the ensemble prediction.
+```{r}
+# Count number of "2" in each row
+clf_response_holdout$Counter.2<- rowSums(clf_response_holdout == "2")
+# Majority vote
+clf_response_holdout$pred_ensemble<- clf_response_holdout$Counter.2
+clf_response_holdout$pred_ensemble[clf_response_holdout$Counter.2>=3]<- 2
+clf_response_holdout$pred_ensemble[clf_response_holdout$Counter.2<=1]<- 1
+clf_response_holdout$pred_ensemble[clf_response_holdout$Counter.2==2]<- sample(1:2,1)
+head(clf_response_holdout)
+```
+
+Compare the confusion matrix for Ensemble model with train and test data.
+```{r}
+# Confusion matrix for Ensemble model with train data
+table(Train$Class, clf_response$pred_ensemble)
+# Confusion matrix for Ensemble model with test data
+table(Holdout$Class, clf_response_holdout$pred_ensemble)
+```
+```{r}
+ensemble.train<- cbind(Accuracy=(130+437)/(130+437+79+54), 
+                       Precision=437/(54+437), Recall=437/(79+437),
+                       Sensitivity=437/(79+437), Specificity=130/(130+54),
+                       TruePositiveRate=437/(54+437), FalsePositiveRate=54/(54+437))
+ensemble.holdout<- cbind(Accuracy=(44+171)/(44+171+47+38),
+                         Precision=171/(38+171), Recall=171/(47+171),
+                         Sensitivity=171/(47+171), Specificity=44/(44+38),
+                         TruePositiveRate=171/(38+171), FalsePositiveRate=38/(38+171))
+ensemble.accuracy<-data.frame(rbind(ensemble.train, ensemble.holdout))
+row.names(ensemble.accuracy) = c("Train.Emsemble", "Holdout.Emsemble")
+ensemble.accuracy
+```
+Training performance is better than holdout in every accuracy measures. However, in general the ensembled model has consistent performance: 
+1) High accuracy in train (81%) and holdout performance (72%).
+2) High Precision and Recall in train (85%~89%) and holdout performance (~80%).The measures are close with less than 5% difference.
+3) High Sensiticity and Specificity in train and holdout performance, where train has higher measures.
+4) High true positive rate and low false positive rate in train and holdout performance.
+
+####5. Summarize the results for both Training and Holdout.
+```{r}
+# Confusion matrix for logistic regression model with train data
+table(Train$Class, clf_response$pred_logistic)
+# Confusion matrix for logistic regression model with test data
+table(Holdout$Class, clf_response_holdout$pred_logistic_holdout)
+```
+```{r}
+logistic.train<- cbind(Accuracy=(110+443)/(110+443+99+48), 
+                       Precision=443/(48+443), Recall=443/(99+443),
+                       Sensitivity=443/(99+443), Specificity=110/(110+48),
+                       TruePositiveRate=443/(48+443), FalsePositiveRate=48/(48+443))
+logistic.holdout<- cbind(Accuracy=(42+181)/(42+181+49+28),
+                         Precision=181/(28+181), Recall=181/(49+181),
+                         Sensitivity=181/(49+181), Specificity=42/(42+28),
+                         TruePositiveRate=181/(28+181), FalsePositiveRate=28/(28+181))
+logistic.accuracy<-data.frame(rbind(logistic.train, logistic.holdout))
+row.names(logistic.accuracy) = c("Train.Logistic", "Holdout.Logistic")
+logistic.accuracy
+```
+```{r}
+# Confusion matrix for tree model with train data
+table(Train$Class, clf_response$pred_tree)
+# Confusion matrix for tree model with test data
+table(Holdout$Class, clf_response_holdout$pred_tree_holdout)
+```
+```{r}
+tree.train<- cbind(Accuracy=(115+448)/(115+448+94+43), 
+                       Precision=448/(43+448), Recall=448/(94+448),
+                       Sensitivity=448/(94+448), Specificity=115/(115+43),
+                       TruePositiveRate=448/(43+448), FalsePositiveRate=43/(43+448))
+tree.holdout<- cbind(Accuracy=(36+178)/(36+178+55+31),
+                         Precision=178/(31+178), Recall=178/(55+178),
+                         Sensitivity=178/(31+178), Specificity=36/(36+31),
+                         TruePositiveRate=178/(55+178), FalsePositiveRate=55/(55+178))
+tree.accuracy<-data.frame(rbind(tree.train, tree.holdout))
+row.names(tree.accuracy) = c("Train.Tree", "Holdout.Tree")
+tree.accuracy
+```
+
+To compare the ensembled model with the other 4 models, compile the accuracy measure into 1 table.
+```{r}
+accuracy_3model<- rbind(ensemble.accuracy, logistic.accuracy, tree.accuracy)[,1:5]
+lda.accuarcy<- rbind(Performance.train[1,], Performance.holdout[1,])
+qda.accuarcy<- rbind(Performance.train[2,], Performance.holdout[2,])
+accuracy_2model<- rbind(lda.accuarcy,qda.accuarcy)
+accuracy_2model<- data.frame(Accuracy=accuracy_2model$Accuracy,
+                          Precision=accuracy_2model$Precision,
+                          Recall=accuracy_2model$Recall,
+                          Sensitivity=accuracy_2model$Sensitivity,
+                          Specificity=accuracy_2model$Specificity)
+row.names(accuracy_2model) = c("Train.LDA", "Holdout.LDA","Train.QDA", "Holdout.QDA")
+accuracy_summary<- rbind(accuracy_3model,accuracy_2model)
+accuracy_summary$model<- rownames(accuracy_summary)
+accuracy_summary$model<- c("Ensemble","Ensemble","Logistic","Logistic","Tree","Tree","LDA","LDA","QDA","QDA")
+accuracy_summary$data<- c("Train","Hold","Train","Hold","Train","Hold","Train","Hold","Train","Hold")
+accuracy_summary
+```
+```{r}
+# Plot the accuracy measures of 5 models
+library(ggplot2)
+library(tidyverse)
+library(gridExtra)
+p_accuracy<- ggplot(accuracy_summary, aes(x = model, y = Accuracy, fill = data)) +
+  geom_col(position = "dodge")
+p_precision<- ggplot(accuracy_summary, aes(x = model, y = Precision, fill = data)) +
+  geom_col(position = "dodge")
+p_recall<- ggplot(accuracy_summary, aes(x = model, y = Recall, fill = data)) +
+  geom_col(position = "dodge")
+p_sensitivity<- ggplot(accuracy_summary, aes(x = model, y = Sensitivity, fill = data)) +
+  geom_col(position = "dodge")
+p_specificity<- ggplot(accuracy_summary, aes(x = model, y = Specificity, fill = data)) +
+  geom_col(position = "dodge")
+grid.arrange(p_accuracy,p_precision,p_recall,p_sensitivity,p_specificity)
+```
+
+**Summary:**
+I like the Ensemble model, which predicts as well as I expected it to predict. As an average model of the other 4 individual models, it obtains relatively higher accuracy measures than most of the individual models. 
+In details, we can observe that:
+1) In general, the ensembled model yields the best predictions overall since it achieves high accuracy, precision, recall and sensitivity both in training and holdout set compared to the other 4 models. 
+2) Among the 4 individual models, logistic regression model and tree model perform better at predicting "Good". Logistic regression model even achieves higher precision than the ensembled model, whereas tree model outpforms the ensembled model in terms of precision and sensitivoity.
+3) QDA model yields the best predictions of "Bad" since it has highest specificity (i.e. Correctly Rejected/ Total poor candidates who actually deserved Rejection). LDA also achieves great specificty.
+
