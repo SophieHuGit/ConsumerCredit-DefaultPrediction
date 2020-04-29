@@ -1,0 +1,251 @@
+---
+title: "Logistic Regression and Classification Tree"
+author: "Shuang (Sophie) Hu"
+date: "2/12/2020"
+---
+
+#Part 1: Logistic Regression of GermanCredit Data
+##1. Generate training and holdout samples for the GermanCredit data, of sizes 700 and 300, using the `sample()` function. Call them, Train and Holdout.
+```{r}
+library(caret)
+data("GermanCredit")
+```
+```{r}
+# Split the training and holdout sets
+set.seed(1234)
+nSample= nrow(GermanCredit)
+Train= sample(1:nSample, as.integer(nSample*0.7), replace=FALSE)
+Holdout= -Train
+```
+
+##2. Build a Logistic Regression model for Train for predicting the "Class" variable, using other variables. Build the model with the lowest "AIC" using R function `glm()`.
+```{r}
+# Create logistic model
+logisticModel<- glm(Class~.,data=GermanCredit[Train,],family=binomial(link=logit))
+# Display model details
+summary(logisticModel)
+```
+**The summary above shows that**: 
+Duration, Amount, InstallmentRatePercentage, existing credits, checking account(<0,0~200 and >200), credit history(this bank, all paid, and paid duly), savings account(bonds<100, 100~500 and >500), employment duration(4 to 7 years), other debtors guarantors(none), other debtors uuarantors(coapplicant guarantors), property(real estate), and other installment plans(bank) are statistically significant with 95% confidence interval.
+
+
+##3. Choose only the "main-effects" (i.e. the original variables "as is")
+*Notes*: Ensure categorical variables are represented with (k-1) dummy variables with values 0 or 1. Function `glm()` converts all factor variables automatically into dummies. Try various independent variable combinations until you achieve the lowest AIC. Choose this as the best model, and present its summary using the `summary()` function in R.
+
+To select the "main-effect" variables, I use stepwise AIC to find the model with lowest AIC score. 
+```{r}
+library(MASS)
+stepAIC(logisticModel)
+```
+
+Then I run logistic regression for only the important variables
+```{r}
+train.glm<- glm(formula = Class ~ Duration + Amount + InstallmentRatePercentage + 
+    Age + NumberExistingCredits + Telephone + ForeignWorker + 
+    CheckingAccountStatus.lt.0 + CheckingAccountStatus.0.to.200 + 
+    CheckingAccountStatus.gt.200 + CreditHistory.NoCredit.AllPaid + 
+    CreditHistory.ThisBank.AllPaid + CreditHistory.PaidDuly + 
+    CreditHistory.Delay + Purpose.UsedCar + Purpose.Furniture.Equipment + 
+    Purpose.Radio.Television + SavingsAccountBonds.lt.100 + SavingsAccountBonds.100.to.500 + 
+    SavingsAccountBonds.500.to.1000 + EmploymentDuration.4.to.7 + 
+    Personal.Male.Divorced.Seperated + OtherDebtorsGuarantors.None + 
+    OtherDebtorsGuarantors.CoApplicant + Property.RealEstate + 
+    Property.CarOther + OtherInstallmentPlans.Bank + Housing.Rent, 
+    family = binomial(link = logit), data = GermanCredit[Train,])
+summary(train.glm)
+```
+
+##4. Generate the confusion matrix (counts and proportions of actual "Bad" and actual "Good" vs predicted "Bad" and predicted "Good") using the lowest AIC model. Do you like the model? Why or why not.
+```{r}
+GoodClass.train=train.glm
+Goodprob.train=train.glm$fitted.values
+
+# Use 0.5 as a threshhold to separate "Good" and "Bad" class
+Goodprob.train[Goodprob.train>=0.5]=1
+Goodprob.train[Goodprob.train<0.5]=0
+
+# Display the confusion matrix of Training data set
+table(GermanCredit[Train,]$Class,Goodprob.train)
+round(prop.table(table(GermanCredit[Train,]$Class,Goodprob.train),1),2)
+```
+```{r}
+logistic.train.measure<- cbind(Effectiveness=433/(58+433), Efficiency=433/(84+433))
+logistic.train.measure
+```
+
+I like the model because it achieves high accuracy and effectiveness. Below are the detailed reasons:
+1) The power of the model is high. Within those predicted good-class customers, 88% of them belong to good class indeed, which is a high percentage.
+2) The confidence of the model is relatively high, meaning within those predicted bad-class customers, 60% of them belong to bad class indeed.
+3) If we calculated the effectiveness and efficiency, we can see that both measure are more than 80%, with effectiveness even reaching to 88%.
+
+###5. Perform Holdout validation testing.
+a) Generate the Confusion matrix in the holdout sample. Do you like the results?
+Why or why not?
+b) Generate the Gain/Lift Charts and AUROC Curves.
+```{r}
+# Holdout validation
+Goodprob.test=predict(GoodClass.train, newdata=GermanCredit[Holdout,],type="response")
+
+# Use 0.5 as a threshhold to separate "Good" and "Bad" class
+Goodprob.test[Goodprob.test>=0.5]=1
+Goodprob.test[Goodprob.test<0.5]=0
+
+# Dispplay the confusion matrix of Holdout data set
+table(GermanCredit[Holdout,]$Class,Goodprob.test)
+round(prop.table(table(GermanCredit[Holdout,]$Class,Goodprob.test),1),2)
+```
+```{r}
+logistic.test.measure<- cbind(Effectiveness=177/(32+177), Efficiency=177/(54+177))
+logistic.test.measure
+```
+
+I like the results, although the power and efficiency is a bit lower than the results of training data, it is still highly-accurate and close to the training data. We can observe that:
+
+1) The power of the model is still high. Within those predicted good-class customers, 85% of them belong to good class indeed, which is a high percentage.
+
+2) The confidence of the model goes down a little bit, but as confidence is not so important as power, we can still regard it as a reasonable measure. It means within those predicted bad-class customers, 41% of them belong to bad class indeed. 
+
+3) If we calculated the effectiveness and efficiency, we can see that both measure are more than 75%, with effectiveness even reaching to 84%.
+
+
+```{r}
+# Plot the Lift/Gains Charts
+require(gains)
+GainChart.train<- gains(as.numeric(GermanCredit[Train,]$Class == "Good"), train.glm$fitted.values, 10)
+GainChart.train
+```
+
+Gains Chart above shows that the sample is divided into 10 groups with 70 observations each. We can observe that in general, the model does not perform so well, but it still outperforms random guess. Specifically, we can see that:
+
+1) 54.2% of good-class customers are covered in top4 deciles of data based on model, meaning we can identify and target more than half of the customers who are likely to buy the product by promote to 40% of total customers.
+
+2) The Cume Lift of 1.43 for top1 decile, means that when selecting 10% of the records based on the model, we can expect 1.43 times the total number of targets found by randomly selecting 10%-of-file without a model.
+
+```{r}
+plot(GainChart.train)
+```
+
+```{r}
+# Plot the AUROC Curves
+library(AUC)
+plot(roc(train.glm$fitted.values, GermanCredit[Train,]$Class))
+```
+
+The ROC chart shows false positive rate (i.e."1-specificity") on x-axis against true positive rate (i.e. sensitivity) on y-axis. Overall, the model correctly predicts the case since the curve climb quickly towards the top-left. Although the climbing speed is not that fast, the model is reasonable in general.
+
+
+#Part 2: Classification Tree Models
+##1. Build a Classification Tree model for the Training Data Set for predicting the "Class" variable, using other variables.
+Grow a large tree by fixing cost complexity parameter = 0, choose a minimum node size for splitting as 30, using `rpart()` function. Use a 10 fold cross-validation.
+```{r}
+library(rpart)
+library(rpart.plot)
+library(pROC)
+```
+```{r}
+# Grow a large tree with training data
+set.seed(123)
+GermanCredit.tree=rpart(formula=Class~.,GermanCredit[Train,],control=rpart.control(cp=0,minsplit=30,xval=10, maxsurrogate=0))
+par(mai=c(0.1,0.1,0.1,0.1))
+# Plot the large tree
+prp(GermanCredit.tree, extra=1, box.palette = "yellow")
+```
+
+##2. Evaluate the complexity parameter plots and prints, using `printcp()` and `plotcp()` functions.
+Choose the cp value corresponding to lowest cross-validation error (xerror), and build the reduced size (pruned) tree in the training data using the cp value corresponding to the lowest xerror.
+```{r}
+printcp(GermanCredit.tree)
+```
+```{r}
+plotcp(GermanCredit.tree,minline=TRUE,col=4)
+```
+
+We can observe that two cp value corresponding to lowest cross-validation error (xerror) are 0.015949 at 8 splits, so I choose the size of 8 splits to prune the tree.
+
+##3. Generate the confusion matrix of predictions (actual "Bad" and actual "Good" vs. predicted "Bad" and predicted "Good") using this pruned tree in the training sample.
+a) How many interactions do you see?
+b) Can you interpret the tree? Do you like it? Give comments.
+```{r}
+# Prune the tree with cost complexity parameter = 0.015949
+library(rpart)
+library(rpart.plot)
+prunedtree=rpart(formula=Class~., GermanCredit[Train,],control=rpart.control(cp=0.015949))
+prp(prunedtree, extra = 1, box.palette = "yellow")
+```
+
+We can see 6 interactions in growing the pruned tree. The tree model could be interpreted as below: a customer can be predicted to be good-class under 3 conditions
+1) He/she has over 0.5 checking account; 
+2) Or, if he/she has less than 0.5 checking account, but has more than 28 duration and over 0.5 saving account; 
+3) Or, if he/she has less than 0.5 checking account, less than 28 duration, but more than 0.5-year credit history to pay all credit at this bank, more than 8472 credit amount and more than 0.5-year credit history to pay all credit.
+
+These conditions indicate that, checking amount is the most important factor in determining the class. Given that a customer has less checking account, duration and saving account balance play more important roles, meaning people with more money have lower risk to default. But if customer are not that rich, they can also be classified as good-class customer if they have good credit history about paying for large credit.
+
+I like the tree model, because it is easy to visualize and interpret the importance of factors in a hierarchical structure. 
+
+##4. Perform Holdout validation testing
+Generate the Confusion matrix in the holdout sample using the tree grown in the training data set.
+
+To get a comprehensive view, I calculate the confusion matrix for both training and holdout data set using the pruned tree.
+```{r}
+# Fit the training data to the pruned tree
+pred.tree.train<- predict(prunedtree, data=GermanCredit[Train,], type = "class")
+
+# Use 0.5 as a threshhold to separate "Good" and "Bad" class
+pred.tree.train[pred.tree.train>=0.5]=1
+pred.tree.train[pred.tree.train<0.5]=0
+
+# Display the confusion matrix of training data
+table(GermanCredit[Train,]$Class,pred.tree.train)
+round(prop.table(table(GermanCredit[Train,]$Class,pred.tree.train),1),2)
+```
+```{r}
+tree.train.measure<- cbind(Effectiveness=457/(34+457), Efficiency=457/(112+457))
+tree.train.measure
+```
+```{r}
+# Fit the holdout data to the prunedtree
+pred.tree.test<- predict(prunedtree, newdata=GermanCredit[Holdout,], type = "class")
+
+# Use 0.5 as a threshhold to separate "Good" and "Bad" class
+pred.tree.test[pred.tree.test>=0.5]=1
+pred.tree.test[pred.tree.test<0.5]=0
+
+# Dispplay the confusion matrix of Holdout data set
+table(GermanCredit[Holdout,]$Class,pred.tree.test)
+round(prop.table(table(GermanCredit[Holdout,]$Class,pred.tree.test),1),2)
+```
+```{r}
+tree.test.measure<- cbind(Effectiveness=186/(23+186), Efficiency=186/(66+186))
+tree.test.measure
+```
+
+We can observe that: the power and efficiency measures for training and holdout data are close, and both measures are high, with effectiveness reaching to 90% and efficiency approaching to 70%-80%. Therefore, it is an accurate model with large power.
+
+To visualize the classification accuracy, I also plot the ROC curve for both training and holdout data using the pruned tree.
+```{r}
+# Plot ROC curve
+test.pred.tree= predict(prunedtree, GermanCredit[Holdout,], type = "prob")
+train.pred.tree= predict(prunedtree, GermanCredit[Train,], type="prob")
+roc.test<- plot(roc(GermanCredit[Holdout,]$Class, test.pred.tree[,2]), print.auc = TRUE, col = "blue")
+roc.train<- plot(roc(GermanCredit[Train,]$Class, train.pred.tree[,2]), print.auc = TRUE, col = "gold", print.auc.y = .4, add = TRUE)
+```
+
+The graph shows relatively high AUC values for both training and holdout set. AUC of training data reaches 78%, which means the pruned tree model has a 78% probability to classify the good and bad class customers successfully. This AUC value is about 10% higher than holdout set.
+
+##5. Summarize the results. Which has performed better for the GermanCredit data - tree or logistic regression
+
+To compare the performance of the two model, I compare the measures of effectiveness and efficiency for training and test result for both models.
+```{r}
+measure<- rbind(logistic.train.measure, logistic.test.measure, tree.train.measure, tree.test.measure)
+data.frame(rownames=c("LogisticTrain","LogisticTest","TreeTrain","TreeTest"), measure)
+```
+
+Therefore，in this case tree performs better. Because both training and holdout set have higher effectiveness, which is the most important measure. The tree also has high efficiency. Although it is not higher than that of logistic model but the values are still high.
+
+
+
+
+
+
+
+
